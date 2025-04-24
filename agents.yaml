@@ -1,0 +1,7 @@
+- id: chain-agent
+  name: ChainAgent
+  prompt: null
+  controller: controller.chain_controller:execute
+  tool: tools.ollama_tool:ollama_tool
+  adapter: adapters.json_output:json_adapter
+  template: templates/reply_template.txt
