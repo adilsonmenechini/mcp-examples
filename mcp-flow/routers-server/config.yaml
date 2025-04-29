@@ -1,0 +1,57 @@
+router:
+  # Server configurations
+  servers:
+    kubernetes:
+      path: "kubernetes-agent/mcp_server.py"
+      enabled: true
+      timeout: 30
+    neo4j:
+      path: "neo4j-server/mcp_server.py"
+      enabled: true
+      timeout: 30
+    faiss:
+      path: "faiss-agent/mcp_server.py"
+      enabled: true
+      timeout: 30
+    ollama:
+      path: "ollama-agent/mcp_server.py"
+      enabled: true
+      timeout: 30
+    duckduckgo:
+      path: "duckduckgo-agent/mcp_server.py"
+      enabled: true
+      timeout: 30
+
+  # Integration settings
+  integration:
+    # Neo4j settings for storing results
+    neo4j:
+      problem_label: "Problem"
+      solution_label: "Solution"
+      relationship_type: "HAS_SOLUTION"
+      
+    # FAISS settings for vector search
+    faiss:
+      dimension: 128
+      similarity_threshold: 0.8
+      
+    # Ollama settings for text generation
+    ollama:
+      default_model: "gemma3:1b"
+      max_tokens: 2000
+      temperature: 0.7
+      
+    # DuckDuckGo settings
+    duckduckgo:
+      max_results: 5
+      
+  # Error handling
+  retry:
+    max_attempts: 3
+    delay: 1  # seconds between retries
+    
+  # Cache settings
+  cache:
+    enabled: true
+    ttl: 3600  # seconds
+    max_size: 1000  # entries

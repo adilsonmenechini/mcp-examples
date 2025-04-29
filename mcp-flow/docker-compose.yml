@@ -1,0 +1,100 @@
+version: '3'
+
+services:
+
+  mcp-base:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+    image: mcp-base:latest
+
+  neo4j:
+    image: neo4j:community
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      - ./neo4j-server/data:/data
+      - ./neo4j-server/logs:/logs
+      - ./neo4j-server/plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  kubernetes-agent:
+    build:
+      context: kubernetes-agent
+    image: kubernetes-agent:latest
+    volumes:
+      - ./kubernetes-agent/logs:/app/logs
+      - ./kubernetes-agent/metrics:/app/metrics
+      - ~/.kube:/root/.kube
+    depends_on:
+      - mcp-base
+
+  neo4j-server:
+    build:
+      context: neo4j-server
+    image: neo4j-server:latest  
+    volumes:
+      - ./neo4j-server/logs:/app/logs
+      - ./neo4j-server/metrics:/app/metrics
+    depends_on:
+      - mcp-base
+      - neo4j
+      
+  faiss-agent:
+    build:
+      context: faiss-agent
+    image: faiss-agent:latest
+    volumes:
+      - ./faiss-agent/logs:/app/logs
+      - ./faiss-agent/metrics:/app/metrics
+      - ./faiss-agent/indices:/app/indices
+    depends_on:
+      - mcp-base
+      - neo4j-server
+      
+  ollama-agent:
+    build:
+      context: ollama-agent
+    image: ollama-agent:latest
+    volumes:
+      - ./ollama-agent/logs:/app/logs
+      - ./ollama-agent/metrics:/app/metrics
+      - ./ollama-agent/models:/app/models
+    depends_on:
+      - mcp-base
+      
+  duckduckgo-agent:
+    build:
+      context: duckduckgo-agent
+    image: duckduckgo-agent:latest
+    volumes:
+      - ./duckduckgo-agent/logs:/app/logs
+      - ./duckduckgo-agent/metrics:/app/metrics
+      - ./duckduckgo-agent/cache:/app/cache
+    depends_on:
+      - mcp-base
+      
+  router-server:
+    build:
+      context: routers-server
+    image: router-server:latest
+    volumes:
+      - ./routers-server/logs:/app/logs
+      - ./routers-server/metrics:/app/metrics
+    depends_on:
+      - mcp-base
+      - kubernetes-agent
+      - neo4j-server
+      - faiss-agent
+      - ollama-agent
+      - duckduckgo-agent
+    ports:
+      - 8080:8080
