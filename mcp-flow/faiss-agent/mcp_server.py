@@ -1,5 +1,5 @@
 from mcp.server.fastmcp import FastMCP
-from core.vector_search_agent import VectorSearchAgent
+from core.vector_agent import VectorSearchAgent
 from pydantic import BaseModel
 
 mcp = FastMCP("FaissAgent")

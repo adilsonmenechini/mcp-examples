@@ -1,8 +1,7 @@
 FROM mcp-base:latest
 
 # Install duckduckgo specific dependencies
-RUN pip install --no-cache-dir \
-    duckduckgo-search \
+RUN pip install duckduckgo-search \
     pyyaml \
     aiohttp \
     beautifulsoup4 \

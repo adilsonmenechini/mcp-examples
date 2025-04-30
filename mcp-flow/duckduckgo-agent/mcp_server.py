@@ -1,5 +1,5 @@
 from mcp.server.fastmcp import FastMCP
-from core.duckduckgo_agent import DuckDuckGoAgent
+from core.search_agent import DuckDuckGoAgent
 from pydantic import BaseModel
 
 mcp = FastMCP("DuckDuckGoAgent")

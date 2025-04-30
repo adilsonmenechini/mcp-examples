@@ -1,12 +1,18 @@
-from fastmcp import Client
+from mcp.client.stdio import stdio_client
+from mcp.client.session import ClientSession
+from mcp import StdioServerParameters
 import yaml
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 import asyncio
 from datetime import datetime, timedelta
+import os
+from utils.errors import ConfigurationError, ResourceError
+from utils.logging import setup_logger
 
+logger = setup_logger("router")
 
 class Cache:
-    def __init__(self, ttl: int, max_size: int):
+    def __init__(self, ttl: int = 300, max_size: int = 1000):
         self.ttl = ttl
         self.max_size = max_size
         self.cache = {}
@@ -27,40 +33,64 @@ class Cache:
             oldest_key = min(self.timestamps.keys(), key=lambda k: self.timestamps[k])
             del self.cache[oldest_key]
             del self.timestamps[oldest_key]
-
+        
         self.cache[key] = value
         self.timestamps[key] = datetime.now()
-
 
 class Router:
     def __init__(self, config_path: str = "config.yaml"):
         self.config = self._load_config(config_path)
-        self.clients = self._initialize_clients()
-        if self.config["router"]["cache"]["enabled"]:
-            self.cache = Cache(
-                ttl=self.config["router"]["cache"]["ttl"],
-                max_size=self.config["router"]["cache"]["max_size"],
-            )
-        else:
-            self.cache = None
+        self.clients = {}
+        self.sessions = {}
+        self.cache = Cache(
+            ttl=self.config["router"]["cache"]["ttl"],
+            max_size=self.config["router"]["cache"]["max_size"]
+        )
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         try:
-            with open(config_path, "r") as f:
-                return yaml.safe_load(f)
+            # Resolve config path relative to the current file
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            full_path = os.path.join(base_dir, config_path)
+            
+            with open(full_path, "r") as f:
+                config = yaml.safe_load(f)
+                
+            # Update server paths to be absolute
+            for server_config in config["router"]["servers"].values():
+                if "path" in server_config:
+                    server_config["path"] = os.path.join("/app", server_config["path"])
+                    
+            return config
         except Exception as e:
-            raise Exception(f"Failed to load config: {str(e)}")
+            raise ConfigurationError(f"Failed to load config: {str(e)}")
 
-    def _initialize_clients(self) -> Dict[str, Client]:
-        clients = {}
+    async def initialize(self) -> None:
+        """Initialize all server connections"""
         for server_name, server_config in self.config["router"]["servers"].items():
             if server_config["enabled"]:
-                clients[server_name] = Client(server_config["path"])
-        return clients
+                try:
+                    logger.info(f"Initializing {server_name} server")
+                    server_params = StdioServerParameters(
+                        command="python",
+                        args=[server_config["path"]]
+                    )
+                    
+                    client = await stdio_client(server_params)
+                    read, write = await client.__aenter__()
+                    session = ClientSession(read, write)
+                    await session.__aenter__()
+                    await session.initialize()
+                    
+                    self.sessions[server_name] = session
+                    logger.info(f"Successfully initialized {server_name} server")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to initialize {server_name}: {str(e)}")
+                    raise ResourceError(f"Failed to initialize {server_name}: {str(e)}")
 
-    async def _retry_operation(
-        self, operation, max_attempts: int = None, delay: int = None
-    ):
+    async def _retry_operation(self, operation, max_attempts: int = None, delay: int = None):
+        """Retry an operation with exponential backoff"""
         if max_attempts is None:
             max_attempts = self.config["router"]["retry"]["max_attempts"]
         if delay is None:
@@ -72,177 +102,37 @@ class Router:
             except Exception:
                 if attempt == max_attempts - 1:
                     raise
-                await asyncio.sleep(delay)
+                await asyncio.sleep(delay * (2 ** attempt))
 
-    async def _query_neo4j(self, cypher_query: str, params: Dict = None) -> Dict:
-        async with self.clients["neo4j"] as neo4j:
-            return await self._retry_operation(
-                lambda: neo4j.call_tool(
-                    "query", {"cypher_query": cypher_query, "params": params or {}}
-                )
-            )
+    async def route_request(self, server: str, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Route a request to the appropriate server"""
+        if server not in self.sessions:
+            return {"status": "error", "message": f"Server {server} not found"}
 
-    async def _generate_embeddings(self, text: str) -> List[float]:
-        async with self.clients["ollama"] as ollama:
-            response = await self._retry_operation(
-                lambda: ollama.call_tool(
-                    "generate",
-                    {
-                        "prompt": text,
-                        "model_name": self.config["router"]["integration"]["ollama"][
-                            "default_model"
-                        ],
-                    },
-                )
-            )
-            # Convert text to vector using FAISS
-            async with self.clients["faiss"] as faiss:
-                vector_response = await self._retry_operation(
-                    lambda: faiss.call_tool(
-                        "text_to_vector", {"text": response["text"]}
-                    )
-                )
-                return vector_response["vector"]
+        # Generate cache key
+        cache_key = f"{server}:{method}:{str(params)}"
+        
+        # Check cache
+        if self.config["router"]["cache"]["enabled"]:
+            cached_result = self.cache.get(cache_key)
+            if cached_result is not None:
+                return {"status": "success", "data": cached_result, "source": "cache"}
 
-    async def handle_problem(self, problem_description: str) -> Dict:
         try:
-            # Check cache first
-            if self.cache:
-                cached_result = self.cache.get(problem_description)
-                if cached_result:
-                    return {"source": "cache", "data": cached_result}
-
-            # 1. Check Neo4j for existing solution
-            neo4j_result = await self._query_neo4j(
-                f"""
-                MATCH (p:{self.config["router"]["integration"]["neo4j"]["problem_label"]}
-                      {{description: $desc}})-[r:{self.config["router"]["integration"]["neo4j"]["relationship_type"]}]->
-                      (s:{self.config["router"]["integration"]["neo4j"]["solution_label"]})
-                RETURN p, s
-                """,
-                {"desc": problem_description},
+            # Call the server method
+            result = await self._retry_operation(
+                lambda: self.sessions[server].invoke_tool(method, params)
             )
 
-            if neo4j_result.get("result"):
-                result = {"source": "neo4j", "data": neo4j_result["result"]}
-                if self.cache:
-                    self.cache.set(problem_description, result)
-                return result
+            # Cache successful result
+            if self.config["router"]["cache"]["enabled"] and result.get("status") == "success":
+                self.cache.set(cache_key, result["data"])
 
-            # 2. Generate embeddings and search similar problems
-            problem_vector = await self._generate_embeddings(problem_description)
-
-            async with self.clients["faiss"] as faiss:
-                similar_problems = await self._retry_operation(
-                    lambda: faiss.call_tool(
-                        "search",
-                        {
-                            "query_vector": problem_vector,
-                            "k": 5,
-                            "threshold": self.config["router"]["integration"]["faiss"][
-                                "similarity_threshold"
-                            ],
-                        },
-                    )
-                )
-
-                if similar_problems.get("results"):
-                    # Get solutions for similar problems from Neo4j
-                    similar_ids = [r["id"] for r in similar_problems["results"]]
-                    similar_solutions = await self._query_neo4j(
-                        f"""
-                        MATCH (p:{self.config["router"]["integration"]["neo4j"]["problem_label"]})
-                        WHERE p.id IN $ids
-                        MATCH (p)-[r:{self.config["router"]["integration"]["neo4j"]["relationship_type"]}]->
-                              (s:{self.config["router"]["integration"]["neo4j"]["solution_label"]})
-                        RETURN p, s
-                        """,
-                        {"ids": similar_ids},
-                    )
-                    if similar_solutions.get("result"):
-                        result = {
-                            "source": "similar_problems",
-                            "data": similar_solutions["result"],
-                        }
-                        if self.cache:
-                            self.cache.set(problem_description, result)
-                        return result
-
-            # 3. Search external sources
-            async with self.clients["duckduckgo"] as search:
-                search_resp = await self._retry_operation(
-                    lambda: search.call_tool(
-                        "search",
-                        {
-                            "query": problem_description,
-                            "max_results": self.config["router"]["integration"][
-                                "duckduckgo"
-                            ]["max_results"],
-                        },
-                    )
-                )
-                results = search_resp.get("results", [])
-
-            # 4. Generate solution using Ollama
-            text_to_summarize = "\n".join(
-                [r.get("body", r.get("snippet", "")) for r in results]
-            )
-            prompt = f"Analyze and provide a solution for: {problem_description}\n\nContext:\n{text_to_summarize}"
-
-            async with self.clients["ollama"] as ollama:
-                ollama_resp = await self._retry_operation(
-                    lambda: ollama.call_tool(
-                        "generate",
-                        {
-                            "prompt": prompt,
-                            "model_name": self.config["router"]["integration"][
-                                "ollama"
-                            ]["default_model"],
-                            "max_tokens": self.config["router"]["integration"][
-                                "ollama"
-                            ]["max_tokens"],
-                            "temperature": self.config["router"]["integration"][
-                                "ollama"
-                            ]["temperature"],
-                        },
-                    )
-                )
-                solution = ollama_resp.get("text", "")
-
-            # 5. Store new problem and solution
-            await self._query_neo4j(
-                f"""
-                CREATE (p:{self.config["router"]["integration"]["neo4j"]["problem_label"]}
-                       {{description: $desc, vector: $vector}})
-                CREATE (s:{self.config["router"]["integration"]["neo4j"]["solution_label"]}
-                       {{text: $solution}})
-                CREATE (p)-[r:{self.config["router"]["integration"]["neo4j"]["relationship_type"]}]->(s)
-                RETURN p, s
-                """,
-                {
-                    "desc": problem_description,
-                    "vector": problem_vector,
-                    "solution": solution,
-                },
-            )
-
-            # Store vector in FAISS
-            async with self.clients["faiss"] as faiss:
-                await self._retry_operation(
-                    lambda: faiss.call_tool(
-                        "add_vectors",
-                        {"vectors": [problem_vector], "ids": [problem_description]},
-                    )
-                )
-
-            result = {"source": "new_solution", "solution": solution}
-            if self.cache:
-                self.cache.set(problem_description, result)
             return result
-
         except Exception as e:
-            return {"error": f"Failed to handle problem: {str(e)}"}
+            return {"status": "error", "message": str(e)}
 
     async def close(self) -> None:
-        for client in self.clients.values():
-            await client.close()
+        """Close all server connections"""
+        for session in self.sessions.values():
+            await session.__aexit__(None, None, None)

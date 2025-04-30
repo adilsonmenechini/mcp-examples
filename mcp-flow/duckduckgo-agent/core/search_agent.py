@@ -1,7 +1,8 @@
-from duckduckgo_search import ddg
+from duckduckgo_search import DDGS
 
 
 class DuckDuckGoAgent:
     def search(self, query: str, max_results=5):
-        results = ddg(query, max_results=max_results)
-        return results or []
+        ddgs = DDGS()
+        results = ddgs.text(query, max_results=max_results)
+        return results

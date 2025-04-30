@@ -6,8 +6,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install FAISS and other Python dependencies
-RUN pip install --no-cache-dir \
-    faiss-cpu \
+RUN pip install faiss-cpu \
     numpy \
     pyyaml \
     scikit-learn

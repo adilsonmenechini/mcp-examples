@@ -1,8 +1,7 @@
 FROM mcp-base:latest
 
 # Install neo4j specific dependencies
-RUN pip install --no-cache-dir \
-    neo4j \
+RUN pip install neo4j \
     pyyaml \
     retry
 

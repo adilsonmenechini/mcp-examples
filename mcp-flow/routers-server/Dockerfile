@@ -1,10 +1,10 @@
 FROM mcp-base:latest
 
 # Install ollama specific dependencies
-RUN pip install ollama \
-    pyyaml \
+RUN pip install pyyaml \
     aiohttp \
-    asyncio
+    asyncio \
+    mcp
 
 # Copy server code
 COPY . /app/ollama-agent/
@@ -14,9 +14,6 @@ WORKDIR /app/ollama-agent
 
 # Create volume mount points
 VOLUME ["/app/logs", "/app/metrics", "/app/models"]
-
-# Environment variables
-ENV OLLAMA_HOST=http://ollama:11434
 
 # Command to run the server
 CMD ["python", "mcp_server.py"]

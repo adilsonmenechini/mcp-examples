@@ -4,7 +4,7 @@ from typing import AsyncGenerator, List
 
 class LLM_Agent:
     def __init__(
-        self, model_name: str = "llama2", host: str = "http://localhost:11434"
+        self, model_name: str = "gemma3:1b", host: str = "http://localhost:11434"
     ):
         self.client = AsyncClient(host=host)
         self.model_name = model_name

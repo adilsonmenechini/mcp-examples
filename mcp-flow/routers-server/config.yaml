@@ -8,7 +8,7 @@ router:
     neo4j:
       path: "neo4j-server/mcp_server.py"
       enabled: true
-      timeout: 30
+      timeout: 60
     faiss:
       path: "faiss-agent/mcp_server.py"
       enabled: true
@@ -16,7 +16,7 @@ router:
     ollama:
       path: "ollama-agent/mcp_server.py"
       enabled: true
-      timeout: 30
+      timeout: 60
     duckduckgo:
       path: "duckduckgo-agent/mcp_server.py"
       enabled: true

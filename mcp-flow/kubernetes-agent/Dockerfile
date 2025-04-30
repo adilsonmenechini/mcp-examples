@@ -1,8 +1,7 @@
 FROM mcp-base:latest
 
 # Install kubernetes specific dependencies
-RUN pip install --no-cache-dir \
-    kubernetes \
+RUN pip install kubernetes \
     pyyaml \
     requests
 
