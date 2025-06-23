@@ -1,0 +1,19 @@
+faiss:
+  # Index settings
+  index_path: "faiss.index"
+  dimension: 128
+  index_type: "ivf"  # "flat" or "ivf"
+  
+  # IVF specific settings (used when index_type is "ivf")
+  ivf:
+    nlist: 100  # number of clusters
+    nprobe: 10  # number of clusters to visit during search
+  
+  # Performance settings
+  batch_size: 1000  # size for batch operations
+  max_vectors: 1000000  # maximum number of vectors to store
+  
+  # Storage settings
+  auto_save: true
+  save_interval: 3600  # seconds between auto-saves
+  backup_path: "backups/"  # directory for index backups

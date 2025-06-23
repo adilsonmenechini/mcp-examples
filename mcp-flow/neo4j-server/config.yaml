@@ -1,0 +1,15 @@
+neo4j:
+  uri: "bolt://localhost:7687"
+  user: "neo4j"
+  password: ""  # Remember to change this
+  # Connection settings
+  max_connection_lifetime: 3600  # seconds
+  connection_timeout: 30  # seconds
+  # Retry settings
+  retry:
+    max_attempts: 3
+    delay: 1  # seconds between retries
+  # Pool settings
+  connection_pool:
+    max_size: 50
+    min_size: 1

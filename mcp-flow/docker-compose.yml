@@ -1,0 +1,154 @@
+services:
+
+  mcp-base:
+    build:
+      context: .
+      dockerfile: common/Dockerfile.base
+    container_name: mcp-base
+    image: mcp-base:latest
+
+  neo4j:
+    build:
+      context: .
+      dockerfile: common/Dockerfile.neo4j
+    image: neo4j:latest
+    container_name: neo4j
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      - ./neo4j-server/data:/data
+      - ./neo4j-server/logs:/logs
+      - ./neo4j-server/plugins:/plugins
+    depends_on:
+      - mcp-base
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsSL http://localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  ollama:
+    build:
+      context: .
+      dockerfile: common/Dockerfile.llm
+    container_name: ollama
+    tty: true
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MAX_LOADED_MODELS=3
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsSL http://localhost:11434 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  kubernetes-agent:
+    build:
+      context: kubernetes-agent
+    image: kubernetes-agent:latest
+    volumes:
+      - ./kubernetes-agent/logs:/app/logs
+      - ./kubernetes-agent/metrics:/app/metrics
+      - ~/.kube:/root/.kube
+    depends_on:
+      - mcp-base
+
+  neo4j-server:
+    build:
+      context: neo4j-server
+    image: neo4j-server:latest  
+    container_name: neo4j-server
+    volumes:
+      - ./neo4j-server/logs:/app/logs
+      - ./neo4j-server/metrics:/app/metrics
+    links:
+      - neo4j
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      
+  faiss-agent:
+    build:
+      context: faiss-agent
+    image: faiss-agent:latest
+    container_name: faiss-agent
+    volumes:
+      - ./faiss-agent/logs:/app/logs
+      - ./faiss-agent/metrics:/app/metrics
+      - ./faiss-agent/indices:/app/indices
+    depends_on:
+      - mcp-base
+      - neo4j-server
+      
+  ollama-agent:
+    build:
+      context: ollama-agent
+    image: ollama-agent:latest
+    volumes:
+      - ./ollama-agent/logs:/app/logs
+      - ./ollama-agent/metrics:/app/metrics
+      - ./ollama-agent/models:/app/models
+    links:
+      - ollama
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      
+  duckduckgo-agent:
+    build:
+      context: duckduckgo-agent
+    image: duckduckgo-agent:latest
+    container_name: duckduckgo-agent
+    volumes:
+      - ./duckduckgo-agent/logs:/app/logs
+      - ./duckduckgo-agent/metrics:/app/metrics
+      - ./duckduckgo-agent/cache:/app/cache
+    depends_on:
+      - mcp-base
+      
+  router-server:
+    build:
+      context: routers-server
+    image: router-server:latest
+    container_name: router-server
+    links:
+      - neo4j-server
+      - faiss-agent
+      - ollama-agent
+      - duckduckgo-agent
+    volumes:
+      - ./routers-server/logs:/app/logs
+      - ./routers-server/metrics:/app/metrics
+    depends_on:
+      mcp-base:
+        condition: service_started
+      faiss-agent:
+        condition: service_started
+      ollama-agent:
+        condition: service_started
+      duckduckgo-agent:
+        condition: service_started
+      kubernetes-agent:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    ports:
+      - 8085:8080
+
+volumes:
+  ollama_data:
+    driver: local

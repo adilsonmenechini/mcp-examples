@@ -1,0 +1,71 @@
+kubernetes:
+  # Kubeconfig settings
+  kubeconfig: "~/.kube/config"
+  context: ""  # Leave empty to use current context
+  
+  # Default settings
+  namespace: "default"
+  timeout: 30  # API timeout in seconds
+  
+  # Retry settings
+  retry:
+    max_attempts: 3
+    delay: 1  # seconds between retries
+    
+  # Logging settings
+  logging:
+    level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    format: "json"
+    file: "kubernetes.log"
+    max_size: 10485760  # 10MB
+    backup_count: 5
+    
+  # Resource settings
+  resources:
+    # Deployment settings
+    deployment:
+      log_tail_lines: 100
+      container_metrics: true
+      
+    # HPA settings
+    hpa:
+      metrics_window: 300  # seconds
+      
+    # CronJob settings
+    cronjob:
+      max_logs_history: 5
+      include_failed_jobs: true
+      
+    # Service settings
+    service:
+      include_endpoints: true
+      endpoint_timeout: 5
+      
+    # Ingress settings
+    ingress:
+      include_tls: true
+      validate_backends: true
+      
+    # Node settings
+    node:
+      include_pod_metrics: true
+      pod_metrics_window: 300  # seconds
+      
+  # Cache settings
+  cache:
+    enabled: true
+    ttl: 300  # seconds
+    max_size: 1000  # entries
+    
+  # Metrics settings
+  metrics:
+    enabled: true
+    collection_interval: 60  # seconds
+    retention_days: 7
+    
+  # Security settings
+  security:
+    verify_ssl: true
+    client_cert: ""
+    client_key: ""
+    ca_cert: ""

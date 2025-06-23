@@ -1,0 +1,22 @@
+ollama:
+  # Server settings
+  host: "http://localhost:11434"
+  
+  # Model settings
+  default_model: "gemma3:1b"
+  models:
+    - name: "gemma3:1b"
+      max_tokens: 2000
+      temperature: 0.7
+    - name: "codellama:7b"
+      max_tokens: 4000
+      temperature: 0.5
+  
+  # Generation settings
+  stream: true  # Enable streaming by default
+  timeout: 30  # Request timeout in seconds
+  
+  # Retry settings
+  retry:
+    max_attempts: 3
+    delay: 1  # seconds between retries
