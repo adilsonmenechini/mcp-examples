@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "calculator_server": {
+            "command": "uv",
+            "args": ["run", "python", "tools/calculator_server.py"]
+        },
+        "ddgs": {
+            "command": "uv",
+            "args": ["run", "python", "tools/duckduckgo.py"]
+        }
+    }
+}
